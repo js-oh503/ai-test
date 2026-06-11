@@ -1,6 +1,6 @@
 """
-조선업 일일 동향 자동 수집 프로그램 (무료 버전)
-RSS 피드에서 최근 24시간 조선/해운 뉴스를 수집해 HTML 보고서를 생성합니다.
+DSR 일일 업계 동향 자동 수집 프로그램 (무료 버전)
+강선 로프·섬유 로프 관련 해양·오프쇼어·크레인·광산 뉴스를 수집해 HTML 보고서를 생성합니다.
 Claude API 없이 동작합니다.
 """
 
@@ -12,55 +12,86 @@ import webbrowser
 import re
 
 # ──────────────────────────────────────────────
-# 뉴스 RSS 피드 목록 (모두 무료)
+# 뉴스 RSS 피드 목록 (모두 무료) — DSR 사업 영역 최적화
 # ──────────────────────────────────────────────
 RSS_FEEDS = [
+    # 해양·오프쇼어 (주요 수요처)
+    {"name": "Offshore Energy",         "url": "https://www.offshore-energy.biz/feed/"},
     {"name": "Hellenic Shipping News",  "url": "https://www.hellenicshippingnews.com/feed/"},
     {"name": "Maritime Executive",      "url": "https://maritime-executive.com/rss"},
     {"name": "Seatrade Maritime",       "url": "https://www.seatrade-maritime.com/taxonomy/term/all/feed"},
-    {"name": "Offshore Energy",         "url": "https://www.offshore-energy.biz/feed/"},
-    {"name": "ShipInsight",             "url": "https://shipinsight.com/feed"},
-    {"name": "Naval Architects",        "url": "https://www.rina.org.uk/rss/news.xml"},
+    # 오프쇼어·에너지 산업
+    {"name": "Rigzone",                 "url": "https://www.rigzone.com/news/rss/rigzone_latest.aspx"},
+    {"name": "Upstream Online",         "url": "https://www.upstreamonline.com/rss"},
+    # 항만·크레인 (하역 장비 수요처)
+    {"name": "Port Technology",         "url": "https://www.porttechnology.org/feed/"},
+    # 광산·중공업 (산업용 와이어로프 수요처)
+    {"name": "Mining.com",              "url": "https://www.mining.com/feed/"},
+    {"name": "International Mining",    "url": "https://im-mining.com/feed/"},
 ]
 
 # ──────────────────────────────────────────────
-# 카테고리별 키워드
+# DSR 핵심 카테고리별 키워드
 # ──────────────────────────────────────────────
 CATEGORIES = {
-    "🚢 신조 수주": [
-        "newbuild", "new build", "order", "contract", "shipbuilding",
-        "shipyard", "vessel order", "ship order",
+    "🪢 와이어로프·강선": [
+        "wire rope", "steel wire rope", "wire strand", "wire cable",
+        "hoist rope", "crane rope", "guy wire", "guy rope",
+        "mining rope", "elevator rope", "lift rope",
+        "WireCo", "Bridon", "Bekaert", "Casar", "Usha Martin",
     ],
-    "⚓ 주요 조선사": [
-        "Hyundai Heavy", "Samsung Heavy", "Daewoo", "HD KSOE", "DSME",
-        "Hanwha Ocean", "Yangzijiang", "CSSC", "CSIC", "Mitsubishi",
-        "Imabari", "HHI", "SHI",
+    "🧵 섬유로프·합성로프": [
+        "fiber rope", "fibre rope", "synthetic rope", "HMPE", "UHMWPE",
+        "Dyneema", "Spectra", "polyester rope", "nylon rope", "polypropylene rope",
+        "aramid rope", "Kevlar rope", "high-performance rope",
+        "Lankhorst", "Samson Rope", "Cortland", "Yale Cordage",
     ],
-    "🌱 친환경/기술": [
-        "LNG", "ammonia", "methanol", "green shipping", "decarbonization",
-        "carbon neutral", "emission", "IMO", "autonomous", "digital",
-        "hydrogen", "VLCC", "LPG",
+    "⚓ 계류·앵커링": [
+        "mooring rope", "mooring line", "mooring system", "mooring chain",
+        "anchor handling", "anchor line", "anchor rope",
+        "FPSO mooring", "buoy mooring", "dynamic positioning",
+        "towing rope", "tow line", "towline",
     ],
-    "🏭 해운/물류": [
-        "container ship", "bulk carrier", "tanker", "ro-ro", "ferry",
-        "cruise", "freight", "charter", "fleet", "carrier",
+    "🏗️ 크레인·리프팅": [
+        "crane wire", "lifting rope", "sling", "rigging",
+        "offshore crane", "subsea lifting", "heavy lift",
+        "hoist", "winch", "capstan", "drawworks",
+        "load line", "running rigging", "standing rigging",
     ],
-    "📈 시장/금융": [
-        "market", "price", "index", "Baltic", "BDI", "revenue",
-        "profit", "earnings", "investment", "acquisition", "merger",
+    "🛢️ 오프쇼어·에너지": [
+        "offshore", "FPSO", "semi-submersible", "drillship", "jack-up",
+        "deepwater", "subsea", "umbilical", "riser",
+        "oil rig", "platform", "floating production",
+        "offshore wind", "wind turbine installation",
+    ],
+    "⛏️ 광산·산업": [
+        "mining", "mine hoist", "shaft", "dragline",
+        "conveyor belt", "aerial ropeway", "tramway",
+        "elevator", "escalator", "bridge cable", "suspension bridge",
+    ],
+    "📊 시장·원자재": [
+        "steel wire market", "rope market", "wire rod", "high carbon steel",
+        "raw material", "steel price", "scrap price",
+        "polyester price", "HMPE price", "fiber market",
+    ],
+    "📋 규정·인증": [
+        "ISO 2408", "EN 12385", "API", "DNV", "Lloyd", "ABS",
+        "certification", "type approval", "inspection",
+        "breaking load", "minimum breaking", "safety factor",
+        "OSHA", "lifting standard", "rope standard",
     ],
 }
 
 ALL_KEYWORDS = [kw for kws in CATEGORIES.values() for kw in kws]
 
-# 조선업과 무관한 기사를 제외하는 키워드 (#3)
+# DSR 사업과 무관한 기사 제외 키워드
 EXCLUDE_KEYWORDS = [
-    "electrification", "power grid", "onshore",
-    "oil price", "crude oil price", "crude futures", "brent oil", "WTI",
-    "healthcare", "medical", "crew health", "wellbeing",
-    "upstream oil", "upstream gas",
-    "subsea inspection", "geophysical survey",
-    "natural gas price", "gas price", "gas futures",
+    "stock market", "stock price", "equity", "IPO", "bond yield",
+    "interest rate", "inflation", "GDP", "cryptocurrency",
+    "healthcare", "medical", "pharmaceutical",
+    "retail", "e-commerce", "consumer goods",
+    "election", "politics", "military strike",
+    "natural gas price", "crude futures", "oil price forecast",
 ]
 
 
@@ -153,7 +184,7 @@ def fetch_articles(hours: int = 24) -> list[dict]:
 # ──────────────────────────────────────────────
 def build_html(articles: list[dict], output_dir: Path) -> Path:
     today_str = datetime.now().strftime("%Y%m%d")
-    filename  = output_dir / f"조선업동향_{today_str}.html"
+    filename  = output_dir / f"DSR동향_{today_str}.html"
 
     # 카테고리별 그룹핑
     grouped: dict[str, list] = {}
@@ -228,8 +259,8 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
 </head>
 <body>
   <header>
-    <h1>조선업 일일 동향 보고서</h1>
-    <p>기준: 최근 24시간 &nbsp;|&nbsp; 생성: {datetime.now().strftime('%Y년 %m월 %d일 %H:%M')} &nbsp;|&nbsp; 수집 기사: {len(articles)}건</p>
+    <h1>DSR 일일 업계 동향 보고서</h1>
+    <p>Wire Rope · Fiber Rope 업계 동향 &nbsp;|&nbsp; 생성: {datetime.now().strftime('%Y년 %m월 %d일 %H:%M')} &nbsp;|&nbsp; 수집 기사: {len(articles)}건</p>
   </header>
 
   <div class="toolbar">
@@ -244,7 +275,7 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
     {sections_html}
   </div>
 
-  <footer>shipbuilding_daily.py &nbsp;|&nbsp; 수집 출처: Hellenic Shipping News · Maritime Executive · Seatrade Maritime · Offshore Energy · ShipInsight</footer>
+  <footer>DSR 업계 동향 수집기 &nbsp;|&nbsp; 출처: Offshore Energy · Hellenic Shipping News · Maritime Executive · Rigzone · Port Technology · Mining.com</footer>
 
   <script>
   const STORAGE_KEY = 'shipnews_ko_{datetime.now().strftime("%Y%m%d")}';
