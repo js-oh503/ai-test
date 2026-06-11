@@ -5,11 +5,45 @@ Claude API 없이 동작합니다.
 """
 
 import sys
+import json
+import urllib.request
+import urllib.parse
 import feedparser
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import webbrowser
 import re
+
+# ──────────────────────────────────────────────
+# 한국어 번역 (Python 서버사이드, 무료)
+# ──────────────────────────────────────────────
+def translate_ko(text: str) -> str:
+    """영문 텍스트를 한국어로 번역. 실패 시 원문 반환."""
+    if not text or not text.strip():
+        return text
+    # 이미 한글이 포함된 경우 번역 생략
+    if re.search(r"[가-힣]", text):
+        return text
+    try:
+        url = ("https://translate.googleapis.com/translate_a/single"
+               "?client=gtx&sl=en&tl=ko&dt=t&q=" + urllib.parse.quote(text))
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=6) as res:
+            data = json.loads(res.read())
+            return "".join(seg[0] for seg in data[0] if seg[0])
+    except Exception:
+        return text
+
+
+def translate_articles(articles: list[dict]) -> list[dict]:
+    """수집된 기사의 제목·요약을 한국어로 번역."""
+    total = len(articles)
+    for i, a in enumerate(articles, 1):
+        print(f"  번역 중 ({i}/{total}): {a['title'][:40]}...", end="\r", flush=True)
+        a["title"]   = translate_ko(a["title"])
+        a["summary"] = translate_ko(a["summary"])
+    print(" " * 70, end="\r")  # 진행 줄 지우기
+    return articles
 
 # ──────────────────────────────────────────────
 # 뉴스 RSS 피드 목록 (모두 무료) — DSR 사업 영역 최적화
@@ -528,15 +562,6 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
     body {{ font-family: 'Inter', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
             background: var(--gray-bg); color: var(--text); min-height: 100vh; }}
 
-    /* ── 오버레이 ── */
-    #overlay {{ position: fixed; inset: 0; background: rgba(244,246,250,.96);
-      backdrop-filter: blur(4px);
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      z-index: 9999; gap: 20px; }}
-    #overlay .ov-ring {{ width: 52px; height: 52px; border: 4px solid var(--gray-bdr);
-      border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; }}
-    #overlay .ov-title {{ font-size: 1rem; font-weight: 700; color: var(--blue); }}
-    #overlay .ov-sub   {{ font-size: 0.82rem; color: var(--gray-text); }}
     @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
 
     /* ── 상단 바 ── */
@@ -559,11 +584,6 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
                   border-radius: 20px; padding: 4px 14px; font-size: 0.78rem; font-weight: 500;
                   border: 1px solid rgba(255,255,255,.18); }}
     .stat-chip b {{ font-weight: 700; }}
-    .spinner-wrap {{ display: flex; align-items: center; gap: 7px;
-                     font-size: 0.78rem; color: rgba(255,255,255,.75); }}
-    .spinner {{ width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.3);
-                border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite;
-                flex-shrink: 0; }}
 
     /* ── 탭 네비 ── */
     .tab-nav {{
@@ -714,12 +734,6 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
 </head>
 <body>
 
-  <div id="overlay">
-    <div class="ov-ring"></div>
-    <div class="ov-title">기사를 한국어로 번역 중입니다</div>
-    <div class="ov-sub" id="ov-progress">잠시만 기다려 주세요</div>
-  </div>
-
   <div class="topbar">
     <div class="topbar-left">
       <div class="topbar-logo">DSR</div>
@@ -728,10 +742,7 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
     </div>
     <div class="topbar-right">
       <div class="stat-chip">전체 <b>{len(articles)}</b>건 &nbsp;|&nbsp; 업계 <b>{len(dsr_articles)}</b> · 경쟁사 <b>{len(comp_articles)}</b></div>
-      <div class="spinner-wrap" id="progress">
-        <span class="spinner"></span>
-        <span id="progressText">번역 중...</span>
-      </div>
+      <div class="stat-chip">🇰🇷 한국어</div>
     </div>
   </div>
 
@@ -766,118 +777,11 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
   <footer>DSR Daily Brief &nbsp;·&nbsp; Offshore Energy · Hellenic Shipping News · Maritime Executive · Rigzone · Port Technology · Mining.com &nbsp;·&nbsp; {datetime.now().strftime('%Y.%m.%d %H:%M')} 생성</footer>
 
   <script>
-  const STORAGE_KEY = 'dsr_ko_{datetime.now().strftime("%Y%m%d")}';
-
-  async function translateText(text) {{
-    if (!text || !text.trim()) return text;
-    const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ko&dt=t&q=' + encodeURIComponent(text);
-    try {{
-      const res = await fetch(url);
-      const data = await res.json();
-      return data[0].map(s => s[0]).join('');
-    }} catch(e) {{ return text; }}
-  }}
-
-  function applyTranslations(cache) {{
-    document.querySelectorAll('.card-title').forEach(el => {{
-      const orig = el.getAttribute('data-orig') || el.innerText;
-      el.setAttribute('data-orig', orig);
-      if (cache[orig]) {{
-        const tn = [...el.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
-        if (tn) tn.textContent = cache[orig];
-        el.classList.add('ko-text');
-      }}
-    }});
-    document.querySelectorAll('.card-body').forEach(el => {{
-      const orig = el.getAttribute('data-orig') || el.innerText;
-      el.setAttribute('data-orig', orig);
-      if (cache[orig]) {{ el.textContent = cache[orig]; el.classList.add('ko-text'); }}
-    }});
-  }}
-
   function switchTab(name) {{
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     document.getElementById('tab-' + name).classList.add('active');
     document.getElementById('panel-' + name).classList.add('active');
-  }}
-
-  function hideOverlay() {{
-    const ov = document.getElementById('overlay');
-    if (ov) {{ ov.style.opacity='0'; ov.style.transition='opacity .4s'; setTimeout(()=>ov.remove(),400); }}
-  }}
-
-  window.addEventListener('DOMContentLoaded', () => {{
-    try {{
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {{
-        const cache = JSON.parse(saved);
-        applyTranslations(cache);
-        if (document.querySelectorAll('.ko-text').length === 0) {{
-          localStorage.removeItem(STORAGE_KEY); translateAll();
-        }} else {{
-          hideOverlay();
-          document.getElementById('progress').style.display = 'none';
-        }}
-      }} else {{ translateAll(); }}
-    }} catch(e) {{ translateAll(); }}
-  }});
-
-  async function translateAll() {{
-    const progress    = document.getElementById('progress');
-    const progressText = document.getElementById('progressText');
-    const ovp          = document.getElementById('ov-progress');
-    progress.style.display = 'flex';
-
-    const titles = [...document.querySelectorAll('.card-title')];
-    const bodies = [...document.querySelectorAll('.card-body')];
-    const total  = titles.length + bodies.length;
-    let done = 0;
-    const cache = {{}};
-
-    // 중복 텍스트 제거 후 한 번만 번역 (속도 향상)
-    const uniqueTexts = new Map();
-    [...titles, ...bodies].forEach(el => {{
-      const t = el.innerText.trim();
-      if (t && !uniqueTexts.has(t)) uniqueTexts.set(t, null);
-    }});
-
-    // 병렬 번역 (5개씩 묶어서)
-    const entries = [...uniqueTexts.keys()];
-    const CHUNK = 5;
-    for (let i = 0; i < entries.length; i += CHUNK) {{
-      const chunk = entries.slice(i, i + CHUNK);
-      await Promise.all(chunk.map(async text => {{
-        const ko = await translateText(text);
-        uniqueTexts.set(text, ko);
-        cache[text] = ko;
-        done++;
-        progressText.textContent = `번역 중... (${{done}}/${{entries.length}})`;
-        if (ovp) ovp.textContent = `${{done}} / ${{entries.length}} 번역 완료`;
-      }}));
-    }}
-
-    // 번역 결과 적용
-    titles.forEach(el => {{
-      const orig = el.innerText.trim();
-      el.setAttribute('data-orig', orig);
-      const ko = uniqueTexts.get(orig);
-      if (ko) {{
-        const tn = [...el.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
-        if (tn) tn.textContent = ko; else el.insertBefore(document.createTextNode(ko), el.firstChild);
-        el.classList.add('ko-text');
-      }}
-    }});
-    bodies.forEach(el => {{
-      const orig = el.innerText.trim();
-      el.setAttribute('data-orig', orig);
-      const ko = uniqueTexts.get(orig);
-      if (ko) {{ el.textContent = ko; el.classList.add('ko-text'); }}
-    }});
-
-    try {{ localStorage.setItem(STORAGE_KEY, JSON.stringify(cache)); }} catch(e) {{}}
-    hideOverlay();
-    progress.style.display = 'none';
   }}
   </script>
 </body>
@@ -900,11 +804,16 @@ def main():
     articles = fetch_articles(hours=24)
     print(f"\n  → 총 {len(articles)}건 수집 완료")
 
-    print("\n[2단계] HTML 보고서 생성 중...")
+    print("\n[2단계] 한국어 번역 중...")
+    articles = translate_articles(articles)
+    print(f"  → 번역 완료")
+
+    print("\n[3단계] HTML 보고서 생성 중...")
     output_dir = Path(__file__).parent / "reports"
     output_dir.mkdir(exist_ok=True)
     report_path = build_html(articles, output_dir)
     print(f"  → 저장: {report_path}")
+    print("     (모든 기사가 한국어로 저장됨)")
 
     print("\n브라우저에서 보고서를 엽니다...")
     webbrowser.open(report_path.as_uri())
