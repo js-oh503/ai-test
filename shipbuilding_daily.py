@@ -248,19 +248,26 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
     const total   = titles.length + bodies.length;
     let done = 0;
 
-    async function doItem(el) {{
-      const original = el.getAttribute('data-orig') || el.textContent;
+    async function doItem(el, isLink) {{
+      const original = el.getAttribute('data-orig') || el.innerText;
       el.setAttribute('data-orig', original);
       const translated = await translateText(original);
-      el.textContent = translated;
+      if (isLink) {{
+        // <a> 태그: href는 유지하고 텍스트 노드만 교체
+        const textNode = [...el.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
+        if (textNode) textNode.textContent = translated;
+        else el.insertBefore(document.createTextNode(translated), el.firstChild);
+      }} else {{
+        el.textContent = translated;
+      }}
       el.classList.add('ko-text');
       done++;
       progressText.textContent = `번역 중... (${{done}}/${{total}})`;
       await new Promise(r => setTimeout(r, 80));
     }}
 
-    for (const el of titles) await doItem(el);
-    for (const el of bodies) await doItem(el);
+    for (const el of titles) await doItem(el, true);
+    for (const el of bodies) await doItem(el, false);
 
     progress.classList.remove('show');
     progressText.textContent = '번역 중...';
