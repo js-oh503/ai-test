@@ -53,9 +53,21 @@ CATEGORIES = {
 
 ALL_KEYWORDS = [kw for kws in CATEGORIES.values() for kw in kws]
 
+# 조선업과 무관한 기사를 제외하는 키워드 (#3)
+EXCLUDE_KEYWORDS = [
+    "electrification", "power grid", "onshore",
+    "oil price", "crude oil price", "crude futures", "brent oil", "WTI",
+    "healthcare", "medical", "crew health", "wellbeing",
+    "upstream oil", "upstream gas",
+    "subsea inspection", "geophysical survey",
+    "natural gas price", "gas price", "gas futures",
+]
+
 
 def is_relevant(title: str, summary: str) -> bool:
     text = (title + " " + summary).lower()
+    if any(kw.lower() in text for kw in EXCLUDE_KEYWORDS):
+        return False
     return any(kw.lower() in text for kw in ALL_KEYWORDS)
 
 
@@ -114,11 +126,23 @@ def fetch_articles(hours: int = 24) -> list[dict]:
         except Exception as e:
             print(f"FAIL 오류: {e}")
 
-    # 중복 제목 제거
-    seen, unique = set(), []
+    # 완전 일치 + 유사 중복 제거 (#4)
+    def title_words(title: str) -> set:
+        return {w for w in re.sub(r"[^\w\s]", "", title.lower()).split() if len(w) >= 3}
+
+    unique = []
     for a in articles:
-        if a["title"] not in seen:
-            seen.add(a["title"])
+        words = title_words(a["title"])
+        is_dup = False
+        for kept in unique:
+            kept_words = title_words(kept["title"])
+            if not words or not kept_words:
+                continue
+            overlap = len(words & kept_words) / min(len(words), len(kept_words))
+            if overlap >= 0.5:
+                is_dup = True
+                break
+        if not is_dup:
             unique.append(a)
 
     return unique
@@ -223,6 +247,8 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
   <footer>shipbuilding_daily.py &nbsp;|&nbsp; 수집 출처: Hellenic Shipping News · Maritime Executive · Seatrade Maritime · Offshore Energy · ShipInsight</footer>
 
   <script>
+  const STORAGE_KEY = 'shipnews_ko_{datetime.now().strftime("%Y%m%d")}';
+
   async function translateText(text) {{
     if (!text || !text.trim()) return text;
     const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ko&dt=t&q=' + encodeURIComponent(text);
@@ -235,6 +261,39 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
     }}
   }}
 
+  function applyTranslations(cache) {{
+    document.querySelectorAll('.card-title').forEach(el => {{
+      const orig = el.getAttribute('data-orig') || el.innerText;
+      el.setAttribute('data-orig', orig);
+      if (cache[orig]) {{
+        const textNode = [...el.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
+        if (textNode) textNode.textContent = cache[orig];
+        el.classList.add('ko-text');
+      }}
+    }});
+    document.querySelectorAll('.card-body').forEach(el => {{
+      const orig = el.getAttribute('data-orig') || el.innerText;
+      el.setAttribute('data-orig', orig);
+      if (cache[orig]) {{
+        el.textContent = cache[orig];
+        el.classList.add('ko-text');
+      }}
+    }});
+  }}
+
+  // 페이지 로드 시 저장된 번역 자동 복원 (#2)
+  window.addEventListener('DOMContentLoaded', () => {{
+    try {{
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {{
+        applyTranslations(JSON.parse(saved));
+        const btn = document.getElementById('translateBtn');
+        btn.disabled = true;
+        btn.textContent = '번역 완료';
+      }}
+    }} catch(e) {{}}
+  }});
+
   async function translateAll() {{
     const btn = document.getElementById('translateBtn');
     const progress = document.getElementById('progress');
@@ -243,17 +302,18 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
     btn.textContent = '번역 완료';
     progress.classList.add('show');
 
-    const titles  = document.querySelectorAll('.card-title');
-    const bodies  = document.querySelectorAll('.card-body');
-    const total   = titles.length + bodies.length;
+    const titles = document.querySelectorAll('.card-title');
+    const bodies = document.querySelectorAll('.card-body');
+    const total  = titles.length + bodies.length;
     let done = 0;
+    const cache = {{}};
 
     async function doItem(el, isLink) {{
       const original = el.getAttribute('data-orig') || el.innerText;
       el.setAttribute('data-orig', original);
       const translated = await translateText(original);
+      cache[original] = translated;
       if (isLink) {{
-        // <a> 태그: href는 유지하고 텍스트 노드만 교체
         const textNode = [...el.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
         if (textNode) textNode.textContent = translated;
         else el.insertBefore(document.createTextNode(translated), el.firstChild);
@@ -268,6 +328,9 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
 
     for (const el of titles) await doItem(el, true);
     for (const el of bodies) await doItem(el, false);
+
+    // 번역 결과를 localStorage에 저장 (#2)
+    try {{ localStorage.setItem(STORAGE_KEY, JSON.stringify(cache)); }} catch(e) {{}}
 
     progress.classList.remove('show');
     progressText.textContent = '번역 중...';
