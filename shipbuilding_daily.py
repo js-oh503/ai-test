@@ -541,7 +541,7 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
             name = cat[len(icon):].strip() if icon else cat
             cnt  = len(grouped[cat])
             parts.append(
-                f'<span class="chip{cls}" onclick="scrollTo(\'{sid}\')">'
+                f'<span class="chip{cls}" onclick="jumpTo(\'{sid}\')">'
                 f'{icon} {name} <strong>{cnt}</strong></span>'
             )
         return "".join(parts)
@@ -812,14 +812,12 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
     document.getElementById('panel-' + name).classList.add('active');
   }}
 
-  function scrollTo(id) {{
+  function jumpTo(id) {{
     const el = document.getElementById(id);
     if (!el) return;
-    // 고정 헤더(topbar 64px + tab-nav 50px + filter-bar ~44px) 높이만큼 오프셋
     const offset = 64 + 50 + 44 + 12;
     const top = el.getBoundingClientRect().top + window.scrollY - offset;
-    window.scrollTo({{ top, behavior: 'smooth' }});
-    // 도착 후 잠깐 강조
+    window.scrollTo({{ top: top, behavior: 'smooth' }});
     setTimeout(() => {{
       el.classList.add('highlight');
       setTimeout(() => el.classList.remove('highlight'), 850);
