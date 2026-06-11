@@ -220,7 +220,7 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>조선업 일일 동향 – {datetime.now().strftime('%Y년 %m월 %d일')}</title>
+  <title>DSR 일일 업계 동향 – {datetime.now().strftime('%Y년 %m월 %d일')}</title>
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; background: #f0f2f5; color: #222; }}
@@ -239,6 +239,19 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
     .progress.show {{ display: flex; }}
     .spinner {{ width: 14px; height: 14px; border: 2px solid #e0e4ea; border-top-color: #0055a5;
                 border-radius: 50%; animation: spin .7s linear infinite; }}
+    /* 번역 완료 전 영문 콘텐츠 숨김 오버레이 */
+    #overlay {{
+      position: fixed; inset: 0; background: #f0f2f5;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 9999; gap: 18px;
+    }}
+    #overlay .ov-spinner {{
+      width: 48px; height: 48px;
+      border: 4px solid #d0d8e8; border-top-color: #0055a5;
+      border-radius: 50%; animation: spin .8s linear infinite;
+    }}
+    #overlay p {{ font-size: 1rem; color: #0055a5; font-weight: 600; }}
+    #overlay small {{ font-size: 0.82rem; color: #888; }}
     @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
     .container {{ max-width: 980px; margin: 28px auto; padding: 0 16px; }}
     .section-title {{ font-size: 1.1rem; font-weight: 700; color: #003366;
@@ -258,6 +271,13 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
   </style>
 </head>
 <body>
+  <!-- 번역 완료 전 영문 노출 차단 오버레이 -->
+  <div id="overlay">
+    <div class="ov-spinner"></div>
+    <p>한국어로 번역 중입니다...</p>
+    <small id="ov-progress">잠시만 기다려 주세요</small>
+  </div>
+
   <header>
     <h1>DSR 일일 업계 동향 보고서</h1>
     <p>Wire Rope · Fiber Rope 업계 동향 &nbsp;|&nbsp; 생성: {datetime.now().strftime('%Y년 %m월 %d일 %H:%M')} &nbsp;|&nbsp; 수집 기사: {len(articles)}건</p>
@@ -312,12 +332,18 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
     }});
   }}
 
+  function hideOverlay() {{
+    const ov = document.getElementById('overlay');
+    if (ov) {{ ov.style.opacity = '0'; ov.style.transition = 'opacity .4s'; setTimeout(() => ov.remove(), 400); }}
+  }}
+
   // 페이지 로드 시: 저장된 번역 복원 또는 자동 번역 시작
   window.addEventListener('DOMContentLoaded', () => {{
     try {{
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {{
         applyTranslations(JSON.parse(saved));
+        hideOverlay();
         document.getElementById('progress').classList.remove('show');
         document.getElementById('translateBtn').style.display = 'flex';
         document.getElementById('translateBtn').disabled = true;
@@ -358,7 +384,10 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
       }}
       el.classList.add('ko-text');
       done++;
+      const msg = `${{done}} / ${{total}} 번역 완료`;
       progressText.textContent = `번역 중... (${{done}}/${{total}})`;
+      const ovp = document.getElementById('ov-progress');
+      if (ovp) ovp.textContent = msg;
       await new Promise(r => setTimeout(r, 80));
     }}
 
@@ -368,6 +397,7 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
     // 번역 결과를 localStorage에 저장 (#2)
     try {{ localStorage.setItem(STORAGE_KEY, JSON.stringify(cache)); }} catch(e) {{}}
 
+    hideOverlay();
     progress.classList.remove('show');
     progressText.textContent = '번역 중...';
     btn.style.display = 'flex';
