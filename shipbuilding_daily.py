@@ -234,10 +234,10 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
 
   <div class="toolbar">
     {stats_html if stats_html else '<span style="color:#aaa">수집된 기사 없음</span>'}
-    <button class="translate-btn" id="translateBtn" onclick="translateAll()">
-      한국어로 번역하기
+    <span class="progress show" id="progress"><span class="spinner"></span> <span id="progressText">한국어로 번역 중...</span></span>
+    <button class="translate-btn" id="translateBtn" onclick="translateAll()" style="display:none">
+      다시 번역
     </button>
-    <span class="progress" id="progress"><span class="spinner"></span> <span id="progressText">번역 중...</span></span>
   </div>
 
   <div class="container">
@@ -281,17 +281,22 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
     }});
   }}
 
-  // 페이지 로드 시 저장된 번역 자동 복원 (#2)
+  // 페이지 로드 시: 저장된 번역 복원 또는 자동 번역 시작
   window.addEventListener('DOMContentLoaded', () => {{
     try {{
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {{
         applyTranslations(JSON.parse(saved));
-        const btn = document.getElementById('translateBtn');
-        btn.disabled = true;
-        btn.textContent = '번역 완료';
+        document.getElementById('progress').classList.remove('show');
+        document.getElementById('translateBtn').style.display = 'flex';
+        document.getElementById('translateBtn').disabled = true;
+        document.getElementById('translateBtn').textContent = '번역 완료';
+      }} else {{
+        translateAll();
       }}
-    }} catch(e) {{}}
+    }} catch(e) {{
+      translateAll();
+    }}
   }});
 
   async function translateAll() {{
@@ -334,6 +339,9 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
 
     progress.classList.remove('show');
     progressText.textContent = '번역 중...';
+    btn.style.display = 'flex';
+    btn.disabled = true;
+    btn.textContent = '번역 완료';
   }}
   </script>
 </body>
