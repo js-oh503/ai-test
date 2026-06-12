@@ -506,12 +506,13 @@ def make_cards(items: list[dict], is_comp: bool = False) -> str:
     return html
 
 
-def make_top5_html(dsr_articles: list[dict]) -> str:
+def make_top5_html(dsr_articles: list[dict]) -> tuple[str, set]:
     if not dsr_articles:
-        return ""
+        return "", set()
     top5 = sorted(dsr_articles, key=score_article, reverse=True)[:5]
+    top5_urls = {a["link"] for a in top5}
     cards = "".join(_card_html(a, rank=i+1) for i, a in enumerate(top5))
-    return f"""
+    html = f"""
     <div class="top5-section">
       <div class="top5-header">
         <span class="top5-icon">⭐</span>
@@ -520,6 +521,7 @@ def make_top5_html(dsr_articles: list[dict]) -> str:
       </div>
       <div class="grid">{cards}</div>
     </div>"""
+    return html, top5_urls
 
 
 # 업계 동향 탭 섹션 표시 순서
@@ -549,12 +551,14 @@ def _sec_id(cat: str) -> str:
     return "sec-" + re.sub(r"[^\w가-힣]", "", cat)
 
 
-def make_sections(grouped: dict, is_comp: bool = False) -> str:
+def make_sections(grouped: dict, is_comp: bool = False, exclude_urls: set = None) -> str:
     comp_cls = " comp" if is_comp else ""
     html = ""
     cats = _ordered_cats(grouped, SECTION_ORDER) if not is_comp else sorted(grouped.keys())
     for cat in cats:
-        items = grouped[cat]
+        items = [a for a in grouped[cat] if not (exclude_urls and a["link"] in exclude_urls)]
+        if not items:
+            continue
         icon  = cat.split()[0] if cat else ""
         name  = cat[len(icon):].strip() if icon else cat
         sid   = _sec_id(cat)
@@ -585,30 +589,32 @@ def build_html(articles: list[dict], output_dir: Path) -> Path:
     for a in comp_articles:
         comp_grouped.setdefault(a["category"], []).append(a)
 
-    # 섹션 HTML
-    dsr_sections  = make_sections(dsr_grouped, is_comp=False)
+    # 섹션 HTML (comp만 여기서 생성 — dsr_sections는 top5_urls 계산 후 생성)
     comp_sections = make_sections(comp_grouped, is_comp=True)
 
-    # 필터 칩 — SECTION_ORDER 순서 + 클릭 시 해당 섹션으로 스크롤
-    def chips(grouped, is_comp=False):
+    top5_html, top5_urls = make_top5_html(dsr_articles)
+    dsr_sections  = make_sections(dsr_grouped, is_comp=False, exclude_urls=top5_urls)
+
+    # 필터 칩 — SECTION_ORDER 순서 + 클릭 시 해당 섹션으로 스크롤 (top5 제외 건수 반영)
+    def chips(grouped, is_comp=False, exclude_urls=None):
         cls  = " comp" if is_comp else ""
         cats = _ordered_cats(grouped, SECTION_ORDER) if not is_comp else sorted(grouped.keys())
         parts = []
         for cat in cats:
+            items = [a for a in grouped[cat] if not (exclude_urls and a["link"] in exclude_urls)]
+            if not items:
+                continue
             sid  = _sec_id(cat)
             icon = cat.split()[0] if cat else ""
             name = cat[len(icon):].strip() if icon else cat
-            cnt  = len(grouped[cat])
             parts.append(
                 f'<span class="chip{cls}" onclick="jumpTo(\'{sid}\')">'
-                f'{icon} {name} <strong>{cnt}</strong></span>'
+                f'{icon} {name} <strong>{len(items)}</strong></span>'
             )
         return "".join(parts)
 
-    dsr_badges  = chips(dsr_grouped)  or '<span style="color:#aaa;font-size:.8rem">수집된 기사 없음</span>'
+    dsr_badges  = chips(dsr_grouped, exclude_urls=top5_urls) or '<span style="color:#aaa;font-size:.8rem">수집된 기사 없음</span>'
     comp_badges = chips(comp_grouped, is_comp=True) or '<span style="color:#aaa;font-size:.8rem">수집된 기사 없음</span>'
-
-    top5_html = make_top5_html(dsr_articles)
 
     html = f"""<!DOCTYPE html>
 <html lang="ko">
