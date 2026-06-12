@@ -56,6 +56,7 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";"
 | `fix-issue` | "이슈 #N 수정해줘" | 이슈 확인 → 댓글 → 코드수정 → 커밋 → 닫기 |
 | `issue-write` | "이슈 등록해줘" | 문제를 GitHub 이슈로 작성·등록 |
 | `issue-runner` | "이슈 러너" | 열린 이슈 전체를 우선순위순 자동 처리 |
+| `code-audit-fix` | "오류 분석하고 수정해줘" | 코드 전체 분석 → 버그 발굴 → 이슈 등록 → 수정 → 커밋 전 사이클 |
 
 스킬 파일 위치: `.claude/skills/<name>/SKILL.md`
 
