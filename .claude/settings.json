@@ -2,5 +2,30 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
-  "teammateMode": "auto"
+  "teammateMode": "auto",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -Command \"$r = Get-ChildItem reports\\DSR*.html -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if ($r) { echo ('{\\\"systemMessage\\\": \\\"최신 보고서: ' + $r.Name + ' (' + $r.LastWriteTime.ToString('MM/dd HH:mm') + ')\\\"}') } else { echo '{\\\"systemMessage\\\": \\\"보고서 없음 — 먼저 shipbuilding_daily.py를 실행하세요\\\"}' }\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -Command \"$f = $input | ConvertFrom-Json | Select-Object -ExpandProperty tool_input | Select-Object -ExpandProperty file_path; if ($f -match 'shipbuilding_daily\\.py') { echo ('{\\\"systemMessage\\\": \\\"shipbuilding_daily.py 수정됨 — 실행하여 확인하세요\\\"}') }\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
 }
