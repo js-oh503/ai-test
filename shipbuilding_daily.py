@@ -315,6 +315,9 @@ def fetch_articles(hours: int = 24) -> list[dict]:
 
                     if not title or not is_relevant(title, summary):
                         continue
+                    if len(summary) < _MIN_SUMMARY_LEN:
+                        log.debug("[%s] 요약 너무 짧아 스킵 (%d자): %s", name, len(summary), title[:60])
+                        continue
 
                     comp = is_competitor(title, summary)
                     articles.append({
@@ -377,12 +380,23 @@ _CAT_SCORE = {
     "시장":     2,  "규정":     1,
 }
 
+_NEG_KEYWORDS = [
+    "massacre", "killing", "murder", "crime", "gang", "illegal mining",
+    "학살", "살인", "범죄", "조직범죄", "불법 채굴",
+]
+_MIN_SUMMARY_LEN = 50
+
 def score_article(a: dict) -> int:
-    cat = a["category"]
+    cat  = a["category"]
+    text = (a["title"] + " " + a["summary"]).lower()
+    base = 1
     for k, v in _CAT_SCORE.items():
         if k in cat:
-            return v
-    return 1
+            base = v
+            break
+    if any(w in text for w in _NEG_KEYWORDS):
+        base -= 5
+    return base
 
 
 def dsr_relevance(a: dict) -> str:
